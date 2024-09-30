@@ -1,15 +1,20 @@
 package config
 
 import (
-	"path/filepath"
-	"strings"
+	"log"
+	"os"
+	"reflect"
+	"strconv"
+
+	"github.com/mitchellh/mapstructure"
+	"github.com/spf13/viper"
 )
 
 type Configuration struct {
 	// Server
 	Server struct {
 		KeepAlivePeriodSeconds int    `yaml:"keepaliveperiodseconds"`
-		ListenAddr             string `yaml:"listenaddr" default:""`
+		ListenAddr             string `yaml:"listenaddr" default:"127.0.0.1"`
 		Port                   int    `yaml:"port" default:"80"`
 
 		SSL struct {
@@ -56,23 +61,99 @@ type Configuration struct {
 	Registration      bool   `yaml:"registration" default:"true"`
 }
 
-func configFiles() []string {
-	return []string{"config.yml"}
-}
-
 // Get returns the configuration extracted from env variables or config file.
 func Get() *Configuration {
-	conf := new(Configuration)
-	err := New(&Config{EnvironmentPrefix: "chat"}).Load(conf, configFiles()...)
+	// Load config file
+	currentDir, err := os.Getwd()
 	if err != nil {
-		panic(err)
+		log.Fatalf("Error getting current directory: %v", err)
 	}
-	addTrailingSlashToPaths(conf)
-	return conf
+
+	v := viper.New()
+	v.SetConfigName("config.example")
+	v.SetConfigType("yaml")
+	v.AddConfigPath(currentDir)
+	if err := v.ReadInConfig(); err != nil {
+		log.Fatalf("config file not exists or read error %s", err)
+	}
+
+	config := new(Configuration)
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			mapstructure.StringToTimeDurationHookFunc(),
+			mapstructure.StringToSliceHookFunc(","),
+			func(f reflect.Type, t reflect.Type, data interface{}) (interface{}, error) {
+				if f.Kind() == reflect.Ptr && f.Elem().Kind() == reflect.Bool {
+					if data == nil {
+						return false, nil
+					}
+				}
+
+				if t.Kind() == reflect.String && data == "" {
+					return reflect.Zero(t).Interface(), nil
+				}
+
+				return data, nil
+			},
+		),
+		Result: config,
+	})
+	if err != nil {
+		log.Fatalf("Error creating decoder: %s", err)
+	}
+
+	if err := decoder.Decode(v.AllSettings()); err != nil {
+		log.Fatalf("Error decoding config: %s", err)
+	}
+
+	return config
 }
 
-func addTrailingSlashToPaths(conf *Configuration) {
-	if !strings.HasSuffix(conf.UploadedImagesDir, "/") && !strings.HasSuffix(conf.UploadedImagesDir, "\\") {
-		conf.UploadedImagesDir += string(filepath.Separator)
+// initializeDefaults sets the default values for the configuration.
+func initializeDefaults(cfg Configuration) Configuration {
+	val := reflect.ValueOf(&cfg).Elem()
+	setDefaults(val)
+	return cfg
+}
+
+func setDefaults(val reflect.Value) {
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Type().Field(i)
+		defaultValue := field.Tag.Get("default")
+
+		if field.Type.Kind() == reflect.Struct {
+			setDefaults(val.Field(i))
+			continue
+		}
+
+		if defaultValue != "" {
+			setFieldValue(val.Field(i), defaultValue)
+		}
+	}
+}
+
+func setFieldValue(field reflect.Value, defaultValue string) {
+	switch field.Kind() {
+	case reflect.String:
+		field.SetString(defaultValue)
+	case reflect.Int:
+		if intValue, err := strconv.Atoi(defaultValue); err == nil {
+			field.SetInt(int64(intValue))
+		}
+	case reflect.Bool:
+		if boolValue, err := strconv.ParseBool(defaultValue); err == nil {
+			field.SetBool(boolValue)
+		}
+	case reflect.Ptr:
+		if field.Type().Elem().Kind() == reflect.Bool {
+			boolValue := defaultValue == "true"
+			ptr := reflect.New(field.Type().Elem())
+			ptr.Elem().SetBool(boolValue)
+			field.Set(ptr)
+		}
+	case reflect.Slice:
+		for i := 0; i < field.Len(); i++ {
+			setFieldValue(field.Index(i), defaultValue)
+		}
 	}
 }

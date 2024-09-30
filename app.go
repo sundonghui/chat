@@ -26,7 +26,7 @@ var (
 func main() {
 	vInfo := &model.VersionInfo{Version: Version, Commit: Commit, BuildDate: BuildDate}
 	mode.Set(Mode)
-	log.Panicln(fmt.Println("Starting version", vInfo.Version+"@"+BuildDate))
+	log.Println(fmt.Println("Starting version", vInfo.Version+"@"+BuildDate))
 
 	rand.Seed(time.Now().UnixNano()) // initialize random number generator
 	conf := config.Get()
