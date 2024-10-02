@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sundonghui/chat/config"
+	"github.com/sundonghui/chat/database"
 	"github.com/sundonghui/chat/mode"
 	"github.com/sundonghui/chat/model"
 )
@@ -38,5 +39,21 @@ func main() {
 	if err := os.MkdirAll(conf.UploadedImagesDir, 0o755); err != nil {
 		panic(err)
 	}
+
+	db, err := database.New(database.DatabaseOptions{
+		Dialect:    conf.Database.Dialect,
+		Connection: conf.Database.Connection,
+		DefaultUserList: []database.DefaultUser{
+			{
+				Username: conf.DefaultUser.Name,
+				Password: conf.DefaultUser.Pass,
+			},
+		},
+		PasswordStrength: conf.PassStrength,
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
 
 }
