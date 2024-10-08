@@ -7,10 +7,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/sundonghui/chat/config"
 	"github.com/sundonghui/chat/database"
 	"github.com/sundonghui/chat/mode"
 	"github.com/sundonghui/chat/model"
+	"github.com/sundonghui/chat/runner"
 )
 
 var (
@@ -56,4 +59,9 @@ func main() {
 	}
 	defer db.Close()
 
+	var engine *gin.Engine
+	if err := runner.Run(engine, conf); err != nil {
+		fmt.Println("Server error: ", err)
+		os.Exit(1)
+	}
 }
